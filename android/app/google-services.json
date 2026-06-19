@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "874499212861",
+    "project_id": "trip-sage-e2g0i2t",
+    "storage_bucket": "trip-sage-e2g0i2t.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:874499212861:android:a0790022ed7347906ecc54",
+        "android_client_info": {
+          "package_name": "com.example.trip_sage"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0VtETD1MznS1pPzDsDngRgVrXSnphV3c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

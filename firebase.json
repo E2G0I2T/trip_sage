@@ -1,1 +1,37 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"trip-sage-e2g0i2t","appId":"1:874499212861:android:a0790022ed7347906ecc54","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"trip-sage-e2g0i2t","configurations":{"android":"1:874499212861:android:a0790022ed7347906ecc54","ios":"1:874499212861:ios:308eef1a0db21eff6ecc54","web":"1:874499212861:web:bd5352e26e036f056ecc54"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "trip-sage-e2g0i2t",
+          "appId": "1:874499212861:android:a0790022ed7347906ecc54",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "trip-sage-e2g0i2t",
+          "configurations": {
+            "android": "1:874499212861:android:a0790022ed7347906ecc54",
+            "ios": "1:874499212861:ios:308eef1a0db21eff6ecc54",
+            "web": "1:874499212861:web:bd5352e26e036f056ecc54"
+          }
+        }
+      }
+    }
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ]
+}

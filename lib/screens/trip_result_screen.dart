@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../services/trip_service.dart';
+import 'trip_chat_screen.dart';
 
 class TripResultScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> data;
@@ -15,19 +16,25 @@ class TripResultScreen extends ConsumerStatefulWidget {
 class _TripResultScreenState extends ConsumerState<TripResultScreen> {
   bool _saving = false;
   bool _saved = false;
+  late Map _itinerary;
+
+  @override
+  void initState() {
+    super.initState();
+    _itinerary = widget.data['itinerary'] as Map;
+  }
 
   Future<void> _save() async {
     setState(() => _saving = true);
     try {
       final service = ref.read(tripServiceProvider);
-      final itinerary = widget.data['itinerary'] as Map;
       await service.saveTrip(
         destination: widget.data['destination'] as String,
         startDate: widget.data['startDate'] as DateTime,
         endDate: widget.data['endDate'] as DateTime,
         budget: widget.data['budget'] as int,
         travelStyle: widget.data['travelStyle'] as String,
-        days: itinerary['days'] as List,
+        days: _itinerary['days'] as List,
       );
       if (!mounted) return;
       setState(() => _saved = true);
@@ -44,23 +51,48 @@ class _TripResultScreenState extends ConsumerState<TripResultScreen> {
     }
   }
 
+  void _openChat() {
+    final destination = widget.data['destination'] as String;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.85,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        builder: (_, scrollController) => TripChatScreen(
+          destination: destination,
+          itinerary: _itinerary,
+          onItineraryUpdated: (updated) {
+            setState(() {
+              _itinerary = updated;
+              _saved = false;
+            });
+          },
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final destination = widget.data['destination'] as String? ?? '';
-    final itinerary = widget.data['itinerary'] as Map;
-    final days = (itinerary['days'] as List).cast<Map>();
+    final days = (_itinerary['days'] as List).cast<Map>();
 
     return Scaffold(
       appBar: AppBar(
         title: Text('$destination 일정'),
         actions: [
           IconButton(
-            onPressed: () {
-              context.push('/map', extra: {
-                'destination': destination,
-                'days': days,
-              });
-            },
+            onPressed: () => context.push('/map', extra: {
+              'destination': destination,
+              'days': days,
+            }),
             icon: const Icon(Icons.map_outlined),
           ),
           IconButton(
@@ -76,7 +108,7 @@ class _TripResultScreenState extends ConsumerState<TripResultScreen> {
         ],
       ),
       body: ListView.builder(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
         itemCount: days.length,
         itemBuilder: (context, dayIndex) {
           final day = days[dayIndex];
@@ -116,6 +148,11 @@ class _TripResultScreenState extends ConsumerState<TripResultScreen> {
             ),
           );
         },
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openChat,
+        icon: const Icon(Icons.edit_note),
+        label: const Text('일정 수정'),
       ),
     );
   }

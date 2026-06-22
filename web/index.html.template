@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html>
 <head>
   <!--
@@ -31,7 +31,7 @@
 
   <title>trip_sage</title>
   <link rel="manifest" href="manifest.json">
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBr--__Um9LAHqYHf9lZs8QkTmuKul4H3Q"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBCQza2zHuyIT2ZI2hkQLSUIS3lzymhKyE"></script>
 </head>
 <body>
   <!--

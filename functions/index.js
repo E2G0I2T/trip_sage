@@ -12,54 +12,55 @@ const itinerarySchema = {
       items: {
         type: "object",
         properties: {
-          dayIndex: { type: "integer", description: "1부터 시작하는 일차" },
-          date: { type: "string", description: "YYYY-MM-DD 형식" },
+          dayIndex: { type: "integer" },
+          date: { type: "string" },
           places: {
             type: "array",
             items: {
               type: "object",
               properties: {
-                name: { type: "string", description: "장소 이름" },
-                category: {
-                  type: "string",
-                  enum: ["식사", "관광", "액티비티", "숙소", "이동"],
-                },
-                startTime: { type: "string", description: "HH:MM 형식" },
+                name: { type: "string" },
+                category: { type: "string", enum: ["식사", "관광", "액티비티", "숙소", "이동"] },
+                startTime: { type: "string" },
                 durationMinutes: { type: "integer" },
-                estimatedCost: {
-                  type: "integer",
-                  description: "1인당 예상 비용, 원화",
-                },
-                memo: { type: "string", description: "한 줄 팁이나 설명" },
+                estimatedCost: { type: "integer" },
+                memo: { type: "string" }
               },
-              required: [
-                "name",
-                "category",
-                "startTime",
-                "durationMinutes",
-                "estimatedCost",
-              ],
-            },
-          },
+              required: ["name", "category", "startTime", "durationMinutes", "estimatedCost"]
+            }
+          }
         },
-        required: ["dayIndex", "date", "places"],
-      },
-    },
+        required: ["dayIndex", "date", "places"]
+      }
+    }
   },
-  required: ["days"],
+  required: ["days"]
 };
+
+async function generateWithRetry(ai, params, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (error) {
+      const isRetryable =
+        error.message?.includes("UNAVAILABLE") ||
+        error.message?.includes("503") ||
+        error.message?.includes("overloaded");
+      if (!isRetryable || attempt === maxRetries) throw error;
+      const delayMs = attempt * 1500;
+      console.log(`Gemini 일시적 오류, ${delayMs}ms 후 재시도 (${attempt}/${maxRetries})`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
 
 exports.generateItinerary = onCall(
   { secrets: [geminiApiKey], region: "asia-northeast3" },
   async (request) => {
-    const { destination, startDate, endDate, budget, travelStyle } =
-      request.data;
+    const { destination, startDate, endDate, budget, travelStyle } = request.data;
 
     if (!destination || !startDate || !endDate || !budget) {
-      throw new HttpsError(
-        "invalid-argument",
-        "destination, startDate, endDate, budget는 필수예요.",
-      );
+      throw new HttpsError("invalid-argument", "destination, startDate, endDate, budget는 필수예요.");
     }
 
     const start = new Date(startDate);
@@ -67,19 +68,11 @@ exports.generateItinerary = onCall(
     const dayCount = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
 
     if (!Number.isFinite(dayCount) || dayCount < 1 || dayCount > 14) {
-      throw new HttpsError(
-        "invalid-argument",
-        "여행 기간은 1일에서 14일 사이여야 해요.",
-      );
+      throw new HttpsError("invalid-argument", "여행 기간은 1일에서 14일 사이여야 해요.");
     }
 
     const apiKeyValue = geminiApiKey.value();
-    if (!apiKeyValue) {
-      throw new HttpsError(
-        "internal",
-        "GEMINI_API_KEY 시크릿 값이 비어있어요.",
-      );
-    }
+    if (!apiKeyValue) throw new HttpsError("internal", "GEMINI_API_KEY가 없어요.");
 
     process.env.GEMINI_API_KEY = apiKeyValue;
     const { GoogleGenAI } = await import("@google/genai");
@@ -100,29 +93,79 @@ date 필드는 ${startDate}부터 시작해서 하루씩 늘려가며 실제 날
 
     let response;
     try {
-      response = await ai.models.generateContent({
+      response = await generateWithRetry(ai, {
         model: "gemini-2.5-flash",
         contents: prompt,
-        config: {
-          responseMimeType: "application/json",
-          responseJsonSchema: itinerarySchema,
-        },
+        config: { responseMimeType: "application/json", responseJsonSchema: itinerarySchema }
       });
     } catch (error) {
       console.error("Gemini API 호출 실패:", error);
-      throw new HttpsError(
-        "internal",
-        "AI 일정 생성에 실패했어요: " + error.message,
-      );
+      throw new HttpsError("internal", "AI 일정 생성에 실패했어요: " + error.message);
     }
 
     try {
       return JSON.parse(response.text);
     } catch (error) {
-      console.error("JSON 파싱 실패:", response.text);
-      throw new HttpsError("internal", "AI 응답을 파싱하는 데 실패했어요.");
+      throw new HttpsError("internal", "AI 응답 파싱 실패");
     }
-  },
+  }
+);
+
+exports.editItinerary = onCall(
+  { secrets: [geminiApiKey], region: "asia-northeast3" },
+  async (request) => {
+    const { currentItineraryJson, userMessage, destination } = request.data;
+
+    if (!currentItineraryJson || !userMessage || !destination) {
+      throw new HttpsError("invalid-argument", "currentItineraryJson, userMessage, destination은 필수예요.");
+    }
+
+    let currentItinerary;
+    try {
+      currentItinerary = JSON.parse(currentItineraryJson);
+    } catch (e) {
+      throw new HttpsError("invalid-argument", "currentItineraryJson 파싱 실패: " + e.message);
+    }
+
+    const apiKeyValue = geminiApiKey.value();
+    if (!apiKeyValue) throw new HttpsError("internal", "GEMINI_API_KEY가 없어요.");
+
+    process.env.GEMINI_API_KEY = apiKeyValue;
+    const { GoogleGenAI } = await import("@google/genai");
+    const ai = new GoogleGenAI({ apiKey: apiKeyValue });
+
+    const prompt = `
+당신은 전문 여행 플래너입니다. 아래는 ${destination} 여행 일정입니다.
+
+현재 일정:
+${JSON.stringify(currentItinerary, null, 2)}
+
+사용자 요청: "${userMessage}"
+
+위 요청을 반영해서 일정을 수정해주세요.
+- 요청한 부분만 최소한으로 변경하고 나머지는 그대로 유지해주세요.
+- date, dayIndex 값은 절대 변경하지 마세요.
+- 수정된 전체 일정을 JSON으로 반환해주세요.
+`;
+
+    let response;
+    try {
+      response = await generateWithRetry(ai, {
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: { responseMimeType: "application/json", responseJsonSchema: itinerarySchema }
+      });
+    } catch (error) {
+      console.error("Gemini editItinerary 실패:", error);
+      throw new HttpsError("internal", "일정 수정에 실패했어요: " + error.message);
+    }
+
+    try {
+      return JSON.parse(response.text);
+    } catch (error) {
+      throw new HttpsError("internal", "AI 응답 파싱 실패");
+    }
+  }
 );
 
 exports.geocodePlaces = onCall(
@@ -134,9 +177,7 @@ exports.geocodePlaces = onCall(
     }
 
     const apiKeyValue = mapsApiKey.value();
-    if (!apiKeyValue) {
-      throw new HttpsError("internal", "MAPS_API_KEY 시크릿 값이 비어있어요.");
-    }
+    if (!apiKeyValue) throw new HttpsError("internal", "MAPS_API_KEY가 없어요.");
 
     const results = await Promise.all(
       queries.map(async (query) => {
@@ -144,9 +185,7 @@ exports.geocodePlaces = onCall(
           const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKeyValue}`;
           const res = await fetch(url);
           const data = await res.json();
-          console.log(
-            `지오코딩 [${query}]: status=${data.status}, error=${data.error_message || "없음"}`,
-          );
+          console.log(`지오코딩 [${query}]: status=${data.status}`);
           if (data.status !== "OK" || !data.results.length) return null;
           const location = data.results[0].geometry.location;
           return { lat: location.lat, lng: location.lng };
@@ -154,9 +193,9 @@ exports.geocodePlaces = onCall(
           console.error(`지오코딩 에러 [${query}]:`, e);
           return null;
         }
-      }),
+      })
     );
 
     return { results };
-  },
+  }
 );

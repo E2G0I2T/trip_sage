@@ -88,23 +88,31 @@ class _TripResultScreenState extends ConsumerState<TripResultScreen> {
       appBar: AppBar(
         title: Text('$destination 일정'),
         actions: [
-          IconButton(
-            onPressed: () => context.push('/map', extra: {
-              'destination': destination,
-              'days': days,
-            }),
-            icon: const Icon(Icons.map_outlined),
-          ),
-          IconButton(
-            onPressed: _saving || _saved ? null : _save,
-            icon: _saving
-                ? const SizedBox(
-                    height: 18,
-                    width: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Icon(_saved ? Icons.bookmark : Icons.bookmark_border),
-          ),
+            IconButton(
+                onPressed: () => context.push('/budget', extra: {
+                'destination': destination,
+                'days': days,
+                'totalBudget': widget.data['budget'] as int,
+                }),
+                icon: const Icon(Icons.pie_chart_outline),
+            ),
+            IconButton(
+                onPressed: () => context.push('/map', extra: {
+                'destination': destination,
+                'days': days,
+                }),
+                icon: const Icon(Icons.map_outlined),
+            ),
+            IconButton(
+                onPressed: _saving || _saved ? null : _save,
+                icon: _saving
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                    : Icon(_saved ? Icons.bookmark : Icons.bookmark_border),
+            ),
         ],
       ),
       body: ListView.builder(

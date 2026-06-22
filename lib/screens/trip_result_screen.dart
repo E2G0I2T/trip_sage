@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../services/trip_service.dart';
 
 class TripResultScreen extends ConsumerStatefulWidget {
@@ -53,6 +54,15 @@ class _TripResultScreenState extends ConsumerState<TripResultScreen> {
       appBar: AppBar(
         title: Text('$destination 일정'),
         actions: [
+          IconButton(
+            onPressed: () {
+              context.push('/map', extra: {
+                'destination': destination,
+                'days': days,
+              });
+            },
+            icon: const Icon(Icons.map_outlined),
+          ),
           IconButton(
             onPressed: _saving || _saved ? null : _save,
             icon: _saving

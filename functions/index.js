@@ -2,6 +2,7 @@ const { onCall, HttpsError } = require("firebase-functions/v2/https");
 const { defineSecret } = require("firebase-functions/params");
 
 const geminiApiKey = defineSecret("GEMINI_API_KEY");
+const mapsApiKey = defineSecret("MAPS_API_KEY");
 
 const itinerarySchema = {
   type: "object",
@@ -21,31 +22,44 @@ const itinerarySchema = {
                 name: { type: "string", description: "장소 이름" },
                 category: {
                   type: "string",
-                  enum: ["식사", "관광", "액티비티", "숙소", "이동"]
+                  enum: ["식사", "관광", "액티비티", "숙소", "이동"],
                 },
                 startTime: { type: "string", description: "HH:MM 형식" },
                 durationMinutes: { type: "integer" },
-                estimatedCost: { type: "integer", description: "1인당 예상 비용, 원화" },
-                memo: { type: "string", description: "한 줄 팁이나 설명" }
+                estimatedCost: {
+                  type: "integer",
+                  description: "1인당 예상 비용, 원화",
+                },
+                memo: { type: "string", description: "한 줄 팁이나 설명" },
               },
-              required: ["name", "category", "startTime", "durationMinutes", "estimatedCost"]
-            }
-          }
+              required: [
+                "name",
+                "category",
+                "startTime",
+                "durationMinutes",
+                "estimatedCost",
+              ],
+            },
+          },
         },
-        required: ["dayIndex", "date", "places"]
-      }
-    }
+        required: ["dayIndex", "date", "places"],
+      },
+    },
   },
-  required: ["days"]
+  required: ["days"],
 };
 
 exports.generateItinerary = onCall(
   { secrets: [geminiApiKey], region: "asia-northeast3" },
   async (request) => {
-    const { destination, startDate, endDate, budget, travelStyle } = request.data;
+    const { destination, startDate, endDate, budget, travelStyle } =
+      request.data;
 
     if (!destination || !startDate || !endDate || !budget) {
-      throw new HttpsError("invalid-argument", "destination, startDate, endDate, budget는 필수예요.");
+      throw new HttpsError(
+        "invalid-argument",
+        "destination, startDate, endDate, budget는 필수예요.",
+      );
     }
 
     const start = new Date(startDate);
@@ -53,12 +67,18 @@ exports.generateItinerary = onCall(
     const dayCount = Math.round((end - start) / (1000 * 60 * 60 * 24)) + 1;
 
     if (!Number.isFinite(dayCount) || dayCount < 1 || dayCount > 14) {
-      throw new HttpsError("invalid-argument", "여행 기간은 1일에서 14일 사이여야 해요.");
+      throw new HttpsError(
+        "invalid-argument",
+        "여행 기간은 1일에서 14일 사이여야 해요.",
+      );
     }
 
     const apiKeyValue = geminiApiKey.value();
     if (!apiKeyValue) {
-      throw new HttpsError("internal", "GEMINI_API_KEY 시크릿 값이 비어있어요.");
+      throw new HttpsError(
+        "internal",
+        "GEMINI_API_KEY 시크릿 값이 비어있어요.",
+      );
     }
 
     process.env.GEMINI_API_KEY = apiKeyValue;
@@ -85,12 +105,15 @@ date 필드는 ${startDate}부터 시작해서 하루씩 늘려가며 실제 날
         contents: prompt,
         config: {
           responseMimeType: "application/json",
-          responseJsonSchema: itinerarySchema
-        }
+          responseJsonSchema: itinerarySchema,
+        },
       });
     } catch (error) {
       console.error("Gemini API 호출 실패:", error);
-      throw new HttpsError("internal", "AI 일정 생성에 실패했어요: " + error.message);
+      throw new HttpsError(
+        "internal",
+        "AI 일정 생성에 실패했어요: " + error.message,
+      );
     }
 
     try {
@@ -99,5 +122,41 @@ date 필드는 ${startDate}부터 시작해서 하루씩 늘려가며 실제 날
       console.error("JSON 파싱 실패:", response.text);
       throw new HttpsError("internal", "AI 응답을 파싱하는 데 실패했어요.");
     }
-  }
+  },
+);
+
+exports.geocodePlaces = onCall(
+  { secrets: [mapsApiKey], region: "asia-northeast3" },
+  async (request) => {
+    const { queries } = request.data;
+    if (!Array.isArray(queries) || queries.length === 0) {
+      throw new HttpsError("invalid-argument", "queries 배열이 필요해요.");
+    }
+
+    const apiKeyValue = mapsApiKey.value();
+    if (!apiKeyValue) {
+      throw new HttpsError("internal", "MAPS_API_KEY 시크릿 값이 비어있어요.");
+    }
+
+    const results = await Promise.all(
+      queries.map(async (query) => {
+        try {
+          const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKeyValue}`;
+          const res = await fetch(url);
+          const data = await res.json();
+          console.log(
+            `지오코딩 [${query}]: status=${data.status}, error=${data.error_message || "없음"}`,
+          );
+          if (data.status !== "OK" || !data.results.length) return null;
+          const location = data.results[0].geometry.location;
+          return { lat: location.lat, lng: location.lng };
+        } catch (e) {
+          console.error(`지오코딩 에러 [${query}]:`, e);
+          return null;
+        }
+      }),
+    );
+
+    return { results };
+  },
 );

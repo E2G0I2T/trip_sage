@@ -31,7 +31,7 @@
 
   <title>trip_sage</title>
   <link rel="manifest" href="manifest.json">
-  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBCQza2zHuyIT2ZI2hkQLSUIS3lzymhKyE"></script>
+  <script src="https://maps.googleapis.com/maps/api/js?key=YOUR_MAPS_API_KEY"></script>
 </head>
 <body>
   <!--

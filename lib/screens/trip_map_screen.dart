@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../services/geocoding_service.dart';
+import 'dart:ui' as ui;
+import 'dart:typed_data';
 
 class TripMapScreen extends ConsumerStatefulWidget {
   final String destination;
@@ -19,39 +21,87 @@ class _TripMapScreenState extends ConsumerState<TripMapScreen> {
   String? _error;
   final List<List<MapEntry<Map, LatLng?>>> _dayPlaceCoords = [];
   GoogleMapController? _mapController;
+  final Map<int, Set<Marker>> _markerCache = {};
 
-  static const _skipCategories = {'이동'};
+  static const _categoryColors = {
+    '식사': Color(0xFFFF6B4A),
+    '관광': Color(0xFF0E5C5C),
+    '액티비티': Color(0xFF4A90D9),
+    '숙소': Color(0xFF9B59B6),
+    '이동': Color(0xFF95A5A6),
+  };
 
+  // 장소명 정제 — → 앞부분만 사용, 불필요한 접미사 제거
   String _cleanPlaceName(String name) {
-    const removeSuffixes = [
-      ' 도착 및 이동', ' 도착', ' 이동', ' 체크인', ' 및 이동',
-      ' 출발', ' 반납', ' 수령', ' 및 출발',
-    ];
-    var cleaned = name;
-    for (final suffix in removeSuffixes) {
-      if (cleaned.endsWith(suffix)) {
-        cleaned = cleaned.substring(0, cleaned.length - suffix.length);
-        break;
-      }
-    }
-    return cleaned.trim();
+    // 혹시 모를 괄호 내용만 제거
+    name = name.replaceAll(RegExp(r'\s*\(.*?\)'), '');
+    return name.trim();
+  }
+
+  // 지오코딩 쿼리 생성
+  // 출발지 정보가 있으면 출발지 기반, 없으면 장소명만
+  String _buildQuery(String cleanedName, String category) {
+    // 이동 카테고리 중 → 앞부분이면 출발지 도시 이름일 가능성 높음
+    // 그냥 cleanedName만 반환 (Google Maps가 잘 찾음)
+    return cleanedName;
+  }
+
+  Future<BitmapDescriptor> _buildNumberedMarker(int number, Color color) async {
+    const size = 80.0;
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final bgPaint = Paint()..color = color;
+    final borderPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+
+    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2 - 2, bgPaint);
+    canvas.drawCircle(const Offset(size / 2, size / 2), size / 2 - 2, borderPaint);
+
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: '$number',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 34,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        (size - textPainter.width) / 2,
+        (size - textPainter.height) / 2,
+      ),
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+
+    return BitmapDescriptor.bytes(
+      Uint8List.view(bytes!.buffer),
+      width: 36,
+      height: 36,
+    );
   }
 
   @override
   void initState() {
     super.initState();
-    debugPrint('TripMapScreen initState 시작, days 개수: ${widget.days.length}');
     _geocodeAll();
   }
 
   Future<void> _geocodeAll() async {
-    debugPrint('_geocodeAll 시작');
     final service = ref.read(geocodingServiceProvider);
-    debugPrint('서비스 인스턴스 생성됨');
 
     try {
       for (final day in widget.days) {
-        debugPrint('day 처리 중: ${day['dayIndex']}');
         final places = (day['places'] as List).cast<Map>();
         final entries = List<MapEntry<Map, LatLng?>>.filled(
           places.length,
@@ -61,37 +111,67 @@ class _TripMapScreenState extends ConsumerState<TripMapScreen> {
 
         final toGeocode = <int, String>{};
         for (var i = 0; i < places.length; i++) {
-          final category = places[i]['category'] as String? ?? '';
           entries[i] = MapEntry(places[i], null);
-          if (_skipCategories.contains(category)) continue;
           final rawName = places[i]['name'] as String? ?? '';
+          final category = places[i]['category'] as String? ?? '';
           final cleanedName = _cleanPlaceName(rawName);
-          toGeocode[i] = '$cleanedName, ${widget.destination}';
+          if (cleanedName.isEmpty) continue;
+          toGeocode[i] = _buildQuery(cleanedName, category);
         }
 
         if (toGeocode.isNotEmpty) {
           final indices = toGeocode.keys.toList();
           final queries = indices.map((i) => toGeocode[i]!).toList();
-          debugPrint('지오코딩 요청: $queries');
-
           final coords = await service.geocodeAll(queries);
-          debugPrint('지오코딩 결과: $coords');
 
           for (var j = 0; j < indices.length; j++) {
             final idx = indices[j];
             entries[idx] = MapEntry(places[idx], coords[j]);
+            debugPrint(
+              'geocode [${places[idx]['name']}] → "${queries[j]}" → ${coords[j]}',
+            );
           }
         }
 
         _dayPlaceCoords.add(List.from(entries));
-        debugPrint('day ${day['dayIndex']} 완료');
       }
+
+      await _buildAllMarkers();
+      if (mounted) setState(() {});
     } catch (e, stack) {
       debugPrint('지오코딩 에러: $e\n$stack');
-      setState(() => _error = '지도 데이터를 불러오는 데 실패했어요: $e');
+      if (mounted) setState(() => _error = '지도 데이터를 불러오는 데 실패했어요: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
-      debugPrint('_geocodeAll 완료, _loading = false');
+    }
+  }
+
+  Future<void> _buildAllMarkers() async {
+    for (var dayIdx = 0; dayIdx < _dayPlaceCoords.length; dayIdx++) {
+      final entries = _dayPlaceCoords[dayIdx]
+          .where((e) => e.value != null)
+          .toList();
+
+      final markers = <Marker>{};
+      for (var i = 0; i < entries.length; i++) {
+        final coord = entries[i].value!;
+        final place = entries[i].key;
+        final category = place['category'] as String? ?? '';
+        final color = _categoryColors[category] ?? const Color(0xFF0E5C5C);
+
+        final icon = await _buildNumberedMarker(i + 1, color);
+        markers.add(Marker(
+          markerId: MarkerId('marker_${dayIdx}_$i'),
+          position: coord,
+          icon: icon,
+          infoWindow: InfoWindow(
+            title: '${i + 1}. ${place['name']}',
+            snippet: place['startTime'] as String?,
+          ),
+        ));
+      }
+
+      _markerCache[dayIdx] = markers;
     }
   }
 
@@ -101,10 +181,12 @@ class _TripMapScreenState extends ConsumerState<TripMapScreen> {
   }
 
   void _fitBoundsToCurrentDay() {
-    final coords = _dayPlaceCoords[_selectedDayIndex]
-        .where((e) => e.value != null)
-        .map((e) => e.value!)
-        .toList();
+    final coords = _dayPlaceCoords.isNotEmpty
+        ? _dayPlaceCoords[_selectedDayIndex]
+            .where((e) => e.value != null)
+            .map((e) => e.value!)
+            .toList()
+        : <LatLng>[];
 
     if (_mapController == null || coords.isEmpty) return;
 
@@ -159,26 +241,13 @@ class _TripMapScreenState extends ConsumerState<TripMapScreen> {
     }
 
     final currentEntries = _dayPlaceCoords.isNotEmpty
-        ? _dayPlaceCoords[_selectedDayIndex].where((e) => e.value != null).toList()
+        ? _dayPlaceCoords[_selectedDayIndex]
+            .where((e) => e.value != null)
+            .toList()
         : <MapEntry<Map, LatLng?>>[];
 
-    final markers = <Marker>{};
-    final polylinePoints = <LatLng>[];
-
-    for (var i = 0; i < currentEntries.length; i++) {
-      final coord = currentEntries[i].value!;
-      final place = currentEntries[i].key;
-      markers.add(Marker(
-        markerId: MarkerId('marker_$i'),
-        position: coord,
-        infoWindow: InfoWindow(
-          title: '${i + 1}. ${place['name']}',
-          snippet: place['startTime'] as String?,
-        ),
-      ));
-      polylinePoints.add(coord);
-    }
-
+    final markers = _markerCache[_selectedDayIndex] ?? {};
+    final polylinePoints = currentEntries.map((e) => e.value!).toList();
     final initialTarget = currentEntries.isNotEmpty
         ? currentEntries.first.value!
         : const LatLng(37.5665, 126.9780);

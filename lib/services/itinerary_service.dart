@@ -7,18 +7,22 @@ class ItineraryService {
 
   Future<dynamic> generateItinerary({
     required String destination,
+    required String origin,
     required DateTime startDate,
     required DateTime endDate,
     required int budget,
     required String travelStyle,
+    required String transportMode,
   }) async {
     final callable = _functions.httpsCallable('generateItinerary');
     final response = await callable.call({
       'destination': destination,
+      'origin': origin.isEmpty ? null : origin,
       'startDate': _formatDate(startDate),
       'endDate': _formatDate(endDate),
       'budget': budget,
       'travelStyle': travelStyle,
+      'transportMode': transportMode,
     });
     return response.data;
   }
@@ -27,17 +31,15 @@ class ItineraryService {
     required Map currentItinerary,
     required String userMessage,
     required String destination,
-    }) async {
+  }) async {
     final callable = _functions.httpsCallable(
-        'editItinerary',
-        options: HttpsCallableOptions(timeout: const Duration(seconds: 120)),
+      'editItinerary',
+      options: HttpsCallableOptions(timeout: const Duration(seconds: 120)),
     );
-
-    // Map을 JSON 문자열로 변환해서 넘기고 서버에서 파싱
     final response = await callable.call({
-        'currentItineraryJson': jsonEncode(currentItinerary),
-        'userMessage': userMessage,
-        'destination': destination,
+      'currentItineraryJson': jsonEncode(currentItinerary),
+      'userMessage': userMessage,
+      'destination': destination,
     });
     return response.data;
   }

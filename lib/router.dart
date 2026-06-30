@@ -1,4 +1,5 @@
 import 'package:go_router/go_router.dart';
+import 'screens/home_screen.dart';
 import 'screens/trip_input_screen.dart';
 import 'screens/trip_result_screen.dart';
 import 'screens/trip_map_screen.dart';
@@ -9,6 +10,10 @@ final router = GoRouter(
   routes: [
     GoRoute(
       path: '/',
+      builder: (context, state) => const HomeScreen(),
+    ),
+    GoRoute(
+      path: '/input',
       builder: (context, state) => const TripInputScreen(),
     ),
     GoRoute(

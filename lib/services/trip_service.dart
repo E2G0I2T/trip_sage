@@ -18,9 +18,7 @@ class TripService {
     required List<dynamic> days,
   }) async {
     final userId = FirebaseAuth.instance.currentUser?.uid;
-    if (userId == null) {
-      throw Exception('로그인 정보가 없어요.');
-    }
+    if (userId == null) throw Exception('로그인 정보가 없어요.');
 
     final docRef = await _db.collection('trips').add({
       'userId': userId,
@@ -34,6 +32,47 @@ class TripService {
     });
 
     return docRef.id;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchTrips() async {
+    final userId = FirebaseAuth.instance.currentUser?.uid;
+    if (userId == null) throw Exception('로그인 정보가 없어요.');
+
+    final snapshot = await _db
+        .collection('trips')
+        .where('userId', isEqualTo: userId)
+        .get();  // orderBy 제거
+
+    final docs = snapshot.docs.map((doc) {
+      final data = doc.data();
+      data['id'] = doc.id;
+      return data;
+    }).toList();
+
+    // 클라이언트에서 createdAt 내림차순 정렬
+    docs.sort((a, b) {
+      final aTime = a['createdAt'];
+      final bTime = b['createdAt'];
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+      return (bTime as Timestamp).compareTo(aTime as Timestamp);
+    });
+
+    return docs;
+  }
+
+  Future<void> deleteTrip(String tripId) async {
+    await _db.collection('trips').doc(tripId).delete();
+  }
+
+  Future<void> updateTrip({
+    required String tripId,
+    required List<dynamic> days,
+  }) async {
+    await _db.collection('trips').doc(tripId).update({
+      'days': days,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 }
 
